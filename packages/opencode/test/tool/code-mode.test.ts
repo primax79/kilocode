@@ -404,8 +404,12 @@ describe("code mode execute", () => {
       ),
     )
 
-    expect(output.output).toContain("Sandbox denied outbound network access")
-    expect(output.output).toContain("remote MCP delegated authority")
+    if (process.platform === "win32") {
+      expect(output.output).toContain("The Windows sandbox backend is not available")
+    } else {
+      expect(output.output).toContain("Sandbox denied outbound network access")
+      expect(output.output).toContain("remote MCP delegated authority")
+    }
     expect(called).toBe(false)
   })
   // kilocode_change end
