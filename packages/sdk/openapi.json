@@ -33379,6 +33379,27 @@
               "type": "string"
             }
           },
+          "marketplaces": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Identifier name for the marketplace"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "Git URL or local filesystem path to marketplace repository"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["name", "url"],
+              "additionalProperties": false
+            }
+          },
           "remote_control": {
             "type": "boolean"
           },

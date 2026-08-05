@@ -3,13 +3,16 @@ import * as vscode from "vscode"
 import type { KiloConnectionService } from "../cli-backend"
 import { retry } from "../cli-backend/retry"
 import type { MarketplaceService } from "."
+import { kebabToTitleCase } from "./api"
 import type {
   InstallMarketplaceItemOptions,
   InstallResult,
   MarketplaceDataResponse,
   MarketplaceItem,
   MarketplaceItemRef,
+  MarketplaceRepo,
   RemoveResult,
+  SkillMarketplaceItem,
 } from "./types"
 
 export interface MarketplaceActionContext {
@@ -31,7 +34,112 @@ export async function fetchMarketplaceData(
   roots: readonly vscode.Uri[],
 ): Promise<MarketplaceDataResponse> {
   const skills = dir ? await fetchSkills(ctx, dir) : undefined
-  return ctx.marketplace.fetchData(project, skills, roots)
+  const [data, marketplaces] = await Promise.all([
+    ctx.marketplace.fetchData(project, skills, roots),
+    fetchConfiguredMarketplaces(ctx, dir),
+  ])
+  const { items: customItems, errors: customErrors } = await fetchCustomMarketplaceSkills(marketplaces)
+  return {
+    ...data,
+    marketplaceItems: [...data.marketplaceItems, ...customItems],
+    errors: customErrors.length > 0 ? [...(data.errors ?? []), ...customErrors] : data.errors,
+    marketplaces,
+  }
+}
+
+// Derives the raw marketplace-skills.json URL for a configured source from
+// its git remote URL (the same shape kilo-plugin-manager's
+// generate_skill_marketplace.py computes owner/repo from) - only GitHub
+// remotes are supported for now, matching what that script itself targets.
+function githubRawFeedUrl(gitUrl: string): string | undefined {
+  const m = /github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/.exec(gitUrl.trim())
+  if (!m) return undefined
+  const [, owner, repo] = m
+  return `https://raw.githubusercontent.com/${owner}/${repo}/main/marketplace-skills.json`
+}
+
+interface RawFeedSkill {
+  id: string
+  description: string
+  category: string
+  githubUrl: string
+  // Exactly one of the two - see installer.ts's installSkill() for which
+  // install path each takes.
+  content?: string
+  files?: string[]
+}
+
+function transformFeedSkill(raw: RawFeedSkill, marketplace: string): SkillMarketplaceItem {
+  const display = kebabToTitleCase(raw.id)
+  return {
+    type: "skill",
+    id: raw.id,
+    name: display,
+    displayName: display,
+    description: raw.description,
+    category: raw.category,
+    displayCategory: kebabToTitleCase(raw.category),
+    githubUrl: raw.githubUrl,
+    content: raw.content,
+    files: raw.files,
+    marketplace,
+  }
+}
+
+// Fetches each configured source's self-hosted marketplace-skills.json feed
+// (see kilo-plugin-manager's SKILL.md §4) - a plain HTTP GET, no git clone.
+// Skill entries carry either `content` (a tarball URL, fetched as-is by the
+// existing installer) or `files` (a flat file list, fetched individually -
+// see installer.ts's downloadSkillFiles()); no local-path install problem
+// either way, since both name real hosted URLs. One marketplace failing to
+// fetch/parse never blocks the others.
+async function fetchCustomMarketplaceSkills(
+  marketplaces: MarketplaceRepo[],
+): Promise<{ items: SkillMarketplaceItem[]; errors: string[] }> {
+  const items: SkillMarketplaceItem[] = []
+  const errors: string[] = []
+
+  await Promise.all(
+    marketplaces
+      .filter((m) => m.enabled !== false)
+      .map(async (m) => {
+        const feedUrl = githubRawFeedUrl(m.url)
+        if (!feedUrl) return
+        try {
+          const response = await fetch(feedUrl)
+          if (!response.ok) {
+            if (response.status !== 404) errors.push(`Failed to fetch marketplace "${m.name}": HTTP ${response.status}`)
+            return
+          }
+          const parsed = (await response.json()) as { items?: RawFeedSkill[] }
+          for (const raw of parsed.items ?? []) items.push(transformFeedSkill(raw, m.name))
+        } catch (err) {
+          errors.push(`Failed to fetch marketplace "${m.name}": ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }),
+  )
+
+  return { items, errors }
+}
+
+// Reads kilo.json's `marketplaces` (global+project merged, same precedence as
+// everything else in Config.Info) via the CLI client - kept out of
+// MarketplaceService, which has no config awareness, and out of the webview,
+// which would otherwise need ConfigProvider (unavailable in the standalone
+// Marketplace panel's dedicated, deliberately lean webview root).
+async function fetchConfiguredMarketplaces(
+  ctx: MarketplaceActionContext,
+  dir: string | undefined,
+): Promise<MarketplaceRepo[]> {
+  if (!dir) return []
+  try {
+    const client = await ctx.connection.getClientAsync(dir)
+    const { data } = await retry(() => client.config.get({ directory: dir }, { throwOnError: true }))
+    return data.marketplaces ?? []
+  } catch (err) {
+    console.warn("[Kilo New] Failed to fetch configured marketplaces:", err)
+    return []
+  }
 }
 
 export async function installMarketplaceItem(

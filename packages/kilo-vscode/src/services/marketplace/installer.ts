@@ -178,8 +178,8 @@ export class MarketplaceInstaller {
       return { success: false, slug: item.id, error: "No workspace directory for project-scope install" }
     }
 
-    if (!item.content) {
-      return { success: false, slug: item.id, error: "Skill has no tarball URL" }
+    if (!item.content && !item.files?.length) {
+      return { success: false, slug: item.id, error: "Skill has no content source (tarball URL or file list)" }
     }
 
     if (!isSafeId(item.id)) {
@@ -199,29 +199,18 @@ export class MarketplaceInstaller {
     // Stage under `base` (not os.tmpdir()) so fs.rename() never crosses filesystems (EXDEV).
     await fs.mkdir(base, { recursive: true })
     const staging = await fs.mkdtemp(path.join(base, `.staging-${item.id}-`))
-    const tarball = path.join(os.tmpdir(), `kilo-skill-${item.id}-${randomUUID()}.tar.gz`)
 
     try {
-      const response = await fetch(item.content)
-      if (!response.ok) {
-        return { success: false, slug: item.id, error: `Download failed: ${response.status}` }
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer())
-      await fs.writeFile(tarball, buffer)
-      await exec("tar", ["-xzf", tarball, "--strip-components=1", "-C", staging])
-
-      const escaped = await findEscapedPaths(staging)
-      if (escaped.length > 0) {
-        console.warn(`Skill archive ${item.id} contains escaped paths:`, escaped)
-        return { success: false, slug: item.id, error: "Skill archive contains unsafe paths" }
-      }
+      const failure = item.content
+        ? await this.extractSkillTarball(item, staging)
+        : await this.downloadSkillFiles(item, staging)
+      if (failure) return failure
 
       try {
         await fs.access(path.join(staging, "SKILL.md"))
       } catch {
-        console.warn(`Extracted skill ${item.id} missing SKILL.md, rolling back`)
-        return { success: false, slug: item.id, error: "Extracted archive missing SKILL.md" }
+        console.warn(`Fetched skill ${item.id} missing SKILL.md, rolling back`)
+        return { success: false, slug: item.id, error: "Skill source is missing SKILL.md" }
       }
 
       await fs.rename(staging, dir)
@@ -238,15 +227,66 @@ export class MarketplaceInstaller {
       console.warn(`Failed to install skill ${item.id}:`, err)
       return { success: false, slug: item.id, error: String(err) }
     } finally {
-      await Promise.all([
-        fs.rm(staging, { recursive: true, force: true }).catch((err) => {
-          console.warn(`Failed to clean up staging directory ${staging}:`, err)
-        }),
-        fs.rm(tarball, { force: true }).catch((err) => {
-          console.warn(`Failed to clean up temp file ${tarball}:`, err)
-        }),
-      ])
+      await fs.rm(staging, { recursive: true, force: true }).catch((err) => {
+        console.warn(`Failed to clean up staging directory ${staging}:`, err)
+      })
     }
+  }
+
+  // The official api.kilo.ai shape: one tarball, fetched and extracted.
+  private async extractSkillTarball(item: SkillMarketplaceItem, staging: string): Promise<InstallResult | undefined> {
+    const tarball = path.join(os.tmpdir(), `kilo-skill-${item.id}-${randomUUID()}.tar.gz`)
+    try {
+      const response = await fetch(item.content!)
+      if (!response.ok) {
+        return { success: false, slug: item.id, error: `Download failed: ${response.status}` }
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer())
+      await fs.writeFile(tarball, buffer)
+      await exec("tar", ["-xzf", tarball, "--strip-components=1", "-C", staging])
+
+      const escaped = await findEscapedPaths(staging)
+      if (escaped.length > 0) {
+        console.warn(`Skill archive ${item.id} contains escaped paths:`, escaped)
+        return { success: false, slug: item.id, error: "Skill archive contains unsafe paths" }
+      }
+      return undefined
+    } finally {
+      await fs.rm(tarball, { force: true }).catch((err) => {
+        console.warn(`Failed to clean up temp file ${tarball}:`, err)
+      })
+    }
+  }
+
+  // The packaging-free alternative: no tarball, no release-publish step
+  // required of the marketplace author - just a flat list of file paths,
+  // each fetched individually from the raw URL derived from item.githubUrl.
+  // Deliberately does NOT reuse skills.urls' discovery.ts download()
+  // (skip-if-exists, permanent cache, see Kilo-Org/kilocode#12907) - every
+  // install here is a fresh fetch into a fresh staging dir, same as the
+  // tarball path above, with the same explicit-refuse-on-reinstall and
+  // real-rm-on-remove semantics already established for it.
+  private async downloadSkillFiles(item: SkillMarketplaceItem, staging: string): Promise<InstallResult | undefined> {
+    const rawBase = githubTreeUrlToRawBase(item.githubUrl)
+    if (!rawBase) {
+      return { success: false, slug: item.id, error: "Could not derive a raw content URL from githubUrl" }
+    }
+
+    for (const file of item.files ?? []) {
+      const dest = path.join(staging, file)
+      if (!contains(staging, dest)) {
+        return { success: false, slug: item.id, error: `Unsafe file path in skill manifest: ${file}` }
+      }
+
+      const response = await fetch(`${rawBase}/${file}`)
+      if (!response.ok) {
+        return { success: false, slug: item.id, error: `Download failed for ${file}: ${response.status}` }
+      }
+      await fs.mkdir(path.dirname(dest), { recursive: true })
+      await fs.writeFile(dest, Buffer.from(await response.arrayBuffer()))
+    }
+    return undefined
   }
 
   // ── Remove ──────────────────────────────────────────────────────────
@@ -392,6 +432,14 @@ function normalizeMcpEntry(raw: Record<string, unknown>): Record<string, unknown
   }
 
   return raw
+}
+
+// https://github.com/<owner>/<repo>/tree/<ref>/<path> -> https://raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>
+function githubTreeUrlToRawBase(githubUrl: string): string | undefined {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/(.+)$/.exec(githubUrl)
+  if (!m) return undefined
+  const [, owner, repo, ref, treePath] = m
+  return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${treePath}`
 }
 
 function isSafeId(id: string): boolean {

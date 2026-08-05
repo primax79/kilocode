@@ -9,11 +9,13 @@ import type {
   MarketplaceItem,
   MarketplaceInstalledMetadata,
   MarketplaceRelevanceMetadata,
+  MarketplaceRepo,
 } from "../../types/marketplace"
 import { TelemetryEventName } from "../../../../src/services/telemetry/types"
 import { MarketplaceListView } from "./MarketplaceListView"
 import { InstallModal } from "./InstallModal"
 import { RemoveDialog } from "./RemoveDialog"
+import { MarketplaceManageModal } from "./MarketplaceManageModal"
 import "./marketplace.css"
 
 const EMPTY_METADATA: MarketplaceInstalledMetadata = { project: {}, global: {} }
@@ -28,6 +30,7 @@ export const MarketplaceView = () => {
   const [items, setItems] = createSignal<MarketplaceItem[]>([])
   const [metadata, setMetadata] = createSignal<MarketplaceInstalledMetadata>(EMPTY_METADATA)
   const [relevance, setRelevance] = createSignal<MarketplaceRelevanceMetadata>(EMPTY_RELEVANCE)
+  const [sources, setSources] = createSignal<MarketplaceRepo[]>([])
   const [fetching, setFetching] = createSignal(true)
   const [errors, setErrors] = createSignal<string[]>([])
   const [pending, setPending] = createSignal<{ item: MarketplaceItem; scope: "project" | "global" } | null>(null)
@@ -45,6 +48,7 @@ export const MarketplaceView = () => {
         setItems(msg.marketplaceItems ?? [])
         setMetadata(msg.marketplaceInstalledMetadata ?? EMPTY_METADATA)
         setRelevance(msg.marketplaceRelevance ?? EMPTY_RELEVANCE)
+        setSources(msg.marketplaces ?? [])
         setErrors(msg.errors ?? [])
         setFetching(false)
         setShowMigrationBanner(msg.showAgentMigrationBanner ?? false)
@@ -143,8 +147,17 @@ export const MarketplaceView = () => {
     vscode.postMessage({ type: "dismissAgentMigrationBanner" })
   }
 
+  const openManageModal = () => {
+    dialog.show(() => <MarketplaceManageModal onClose={() => dialog.close()} />)
+  }
+
   return (
     <div class="marketplace-view">
+      <div style={{ display: "flex", "justify-content": "flex-end", "margin-bottom": "8px" }}>
+        <Button variant="secondary" size="small" icon="settings-gear" onClick={openManageModal}>
+          Manage Sources
+        </Button>
+      </div>
       <Show when={errors().length > 0}>
         {errors().map((err, idx) => (
           <Card variant="error" class="marketplace-error-banner">
@@ -168,6 +181,7 @@ export const MarketplaceView = () => {
         items={items()}
         metadata={metadata()}
         relevance={relevance()}
+        sources={sources()}
         fetching={fetching()}
         searchPlaceholder={t("marketplace.search")}
         emptyMessage={t("marketplace.empty")}

@@ -100,6 +100,17 @@ export const Info = Schema.Struct({
   // NOTE: Any new kilocode_change key added to Config.Info must also be mirrored in
   // apps/web/src/app/config.json/extras.ts in the cloud repo, otherwise
   // $schema: https://app.kilo.ai/config.json will not recognize it.
+  marketplaces: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          name: Schema.String.annotate({ description: "Identifier name for the marketplace" }),
+          url: Schema.String.annotate({ description: "Git URL or local filesystem path to marketplace repository" }),
+          enabled: Schema.optional(Schema.Boolean).annotate({ description: "Whether this marketplace is active" }),
+        }),
+      ),
+    ),
+  ).annotate({ description: "Configured marketplace repositories" }),
   remote_control: Schema.optional(Schema.Boolean).annotate({
     description: "Enable remote control of sessions via Kilo Cloud. Equivalent to running /remote on startup.",
   }),

@@ -170,6 +170,7 @@ export interface Config {
   experimental?: ExperimentalConfig
   sandbox?: SandboxConfig
   indexing?: IndexingConfig
+  marketplaces?: Array<{ name: string; url: string; enabled?: boolean }>
 }
 
 export interface FeatureFlags {

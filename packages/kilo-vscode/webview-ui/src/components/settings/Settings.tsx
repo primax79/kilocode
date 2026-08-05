@@ -10,7 +10,7 @@ import { useConfig } from "../../context/config"
 import { useSession } from "../../context/session"
 import ModelsTab from "./ModelsTab"
 import ProvidersTab from "./ProvidersTab"
-import AgentBehaviourTab from "./AgentBehaviourTab"
+import { AgentBehaviourTab } from "./AgentBehaviourTab"
 import AutoApproveTab from "./AutoApproveTab"
 import BrowserTab from "./BrowserTab"
 import CheckpointsTab from "./CheckpointsTab"
@@ -19,6 +19,7 @@ import AutocompleteTab from "./AutocompleteTab"
 import NotificationsTab from "./NotificationsTab"
 import ContextTab from "./ContextTab"
 
+import MarketplaceTab from "./MarketplaceTab"
 import CommitMessageTab from "./CommitMessageTab"
 import ExperimentalTab from "./ExperimentalTab"
 import LanguageTab from "./LanguageTab"
@@ -201,6 +202,10 @@ const Settings: Component<SettingsProps> = (props) => {
             <Icon name="server" />
             <span class="label">{language.t("settings.context.title")}</span>
           </Tabs.Trigger>
+          <Tabs.Trigger value="marketplace" aria-label="Marketplace">
+            <Icon name="store" />
+            <span class="label">Marketplace</span>
+          </Tabs.Trigger>
 
           <Tabs.Trigger value="commitMessage" aria-label={language.t("settings.commitMessage.title")}>
             <Icon name="edit" />
@@ -271,6 +276,10 @@ const Settings: Component<SettingsProps> = (props) => {
         <Tabs.Content value="context">
           <h3>{language.t("settings.context.title")}</h3>
           <ContextTab />
+        </Tabs.Content>
+        <Tabs.Content value="marketplace">
+          <h3>Marketplace</h3>
+          <MarketplaceTab />
         </Tabs.Content>
 
         <Tabs.Content value="commitMessage">

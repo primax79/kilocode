@@ -24,6 +24,7 @@ export interface MarketplaceItemBase {
   category: string
   author?: string
   authorUrl?: string
+  marketplace?: string
   prerequisites?: string[]
   suggest_for?: MarketplaceSuggestFor
 }
@@ -56,9 +57,18 @@ export interface AgentMarketplaceItem extends MarketplaceItemBase {
 export interface SkillMarketplaceItem extends MarketplaceItemBase {
   type: "skill"
   githubUrl: string
-  content: string
+  // Exactly one is present - see the host-side SkillMarketplaceItem
+  // (services/marketplace/types.ts) for why there are two install shapes.
+  content?: string
+  files?: string[]
   displayName: string
   displayCategory: string
+}
+
+export interface MarketplaceRepo {
+  name: string
+  url: string
+  enabled?: boolean
 }
 
 export type MarketplaceItem = McpMarketplaceItem | AgentMarketplaceItem | SkillMarketplaceItem

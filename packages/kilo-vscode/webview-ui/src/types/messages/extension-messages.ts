@@ -1,7 +1,12 @@
 import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@kilocode/sdk/v2/client"
 import type { DiffSourceCapabilities, DiffSourceDescriptor } from "../../../../src/diff/sources/types"
 import type { PartBatch, PartRemove, PartUpdate } from "../../../../src/shared/stream-messages"
-import type { MarketplaceItem, MarketplaceInstalledMetadata, MarketplaceRelevanceMetadata } from "../marketplace"
+import type {
+  MarketplaceItem,
+  MarketplaceInstalledMetadata,
+  MarketplaceRelevanceMetadata,
+  MarketplaceRepo,
+} from "../marketplace"
 import type { ConnectionState, ServerInfo, SessionStatus } from "./connection"
 import type { FileAttachment, Part } from "./parts"
 import type {
@@ -1176,6 +1181,11 @@ export interface MarketplaceDataMessage {
   marketplaceItems: MarketplaceItem[]
   marketplaceInstalledMetadata: MarketplaceInstalledMetadata
   marketplaceRelevance: MarketplaceRelevanceMetadata
+  // Configured marketplace sources (kilo.json's `marketplaces`), sent from the
+  // extension host so the source filter doesn't need ConfigProvider - this
+  // message is shared by the standalone Marketplace panel, whose webview
+  // root deliberately omits it (see MarketplaceApp.tsx).
+  marketplaces?: MarketplaceRepo[]
   errors?: string[]
   showAgentMigrationBanner?: boolean
 }

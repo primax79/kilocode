@@ -54,6 +54,8 @@ import { createMarketplaceRemover, removeMcp } from "./kilo-provider/remove-conf
 import { AgentRequirementsController } from "./kilo-provider/agent-requirements-controller"
 import type { RemoteStatusService } from "./services/RemoteStatusService"
 import { resolveProjectDirectory } from "./project-directory"
+import { MarketplaceService } from "./services/marketplace"
+import { fetchMarketplaceData, type MarketplaceActionContext } from "./services/marketplace/actions"
 import { seedSessionStatuses } from "./session-status"
 import { normalizeEnhancePromptErrorMessage } from "./enhance-prompt-error"
 import { retry } from "./services/cli-backend/retry"
@@ -537,6 +539,16 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.registerPresence()
   }
 
+  private readonly marketplace = new MarketplaceService()
+
+  private get marketplaceCtx(): MarketplaceActionContext {
+    return {
+      connection: this.connectionService,
+      marketplace: this.marketplace,
+      storage: this.extensionContext?.globalStorageUri,
+    }
+  }
+
   /**
    * Report presence for this provider: the focused session is visible, and
    * open local tab sessions (plus the focused one) stay attached even while
@@ -1003,6 +1015,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.throughputConfigDisposable = watchThroughputConfig((msg) => this.postMessage(msg))
     this.telemetryStateDisposable?.dispose()
     this.telemetryStateDisposable = watchTelemetryState((msg) => this.postMessage(msg))
+    // eslint-disable-next-line complexity
     this.webviewMessageDisposable = webview.onDidReceiveMessage(async (message) => {
       const intercepted = await interceptMessage(message, {
         workspaceDir: (sid) => this.getWorkspaceDirectory(sid ?? this.currentSession?.id),
@@ -1195,6 +1208,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           break
         case "openMarketplacePanel":
           this.openMarketplacePanel(message.directory)
+          break
+        case "fetchMarketplaceData":
+          this.fetchAndSendMarketplaceData().catch((e) => console.error("[Kilo New] fetchAndSendMarketplaceData failed:", e))
           break
         case "forkSession":
           handleForkSession(this.forkCtx, message.sessionId, message.messageId).catch((e) =>
@@ -2486,6 +2502,30 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       this.postMessage(message)
     } catch (error) {
       console.error("[Kilo New] KiloProvider: Failed to fetch agents:", error)
+    }
+  }
+
+  private async fetchAndSendMarketplaceData(): Promise<void> {
+    try {
+      const project = this.getProjectDirectory() ?? undefined
+      const dir = this.getWorkspaceDirectory()
+      const roots = vscode.workspace.workspaceFolders?.map((f) => f.uri) ?? []
+      const data = await fetchMarketplaceData(this.marketplaceCtx, project, dir, roots)
+      const message = {
+        type: "marketplaceData" as const,
+        ...data,
+        showAgentMigrationBanner: false,
+      }
+      this.postMessage(message)
+    } catch (error) {
+      console.error("[Kilo New] KiloProvider: Failed to fetch marketplace data:", error)
+      this.postMessage({
+        type: "marketplaceData",
+        marketplaceItems: [],
+        marketplaceInstalledMetadata: { project: {}, global: {} },
+        marketplaceRelevance: {},
+        errors: [String(error)],
+      })
     }
   }
 

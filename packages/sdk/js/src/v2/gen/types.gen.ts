@@ -2542,6 +2542,17 @@ export type Config = {
   autoupdate?: boolean | "notify"
   disabled_providers?: Array<string>
   enabled_providers?: Array<string>
+  marketplaces?: Array<{
+    /**
+     * Identifier name for the marketplace
+     */
+    name: string
+    /**
+     * Git URL or local filesystem path to marketplace repository
+     */
+    url: string
+    enabled?: boolean
+  }>
   remote_control?: boolean
   auto_collapse_reasoning?: boolean
   indexing?: IndexingConfig

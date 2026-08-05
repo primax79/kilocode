@@ -10,6 +10,7 @@ import type {
   SkillMarketplaceItem,
   MarketplaceInstalledMetadata,
   MarketplaceRelevanceMetadata,
+  MarketplaceRepo,
 } from "../../types/marketplace"
 import { useLanguage } from "../../context/language"
 import { useVSCode } from "../../context/vscode"
@@ -31,6 +32,11 @@ interface Props {
   emptyMessage: string
   relevantEmptyMessage: string
   initialRelevant?: boolean
+  // Configured marketplace sources for the source filter - passed down from
+  // the extension host via the marketplaceData message rather than read from
+  // config context, since this view is shared with the standalone
+  // Marketplace panel, whose webview root has no ConfigProvider.
+  sources?: MarketplaceRepo[]
   onInstall: (item: MarketplaceItem) => void
   onRemove: (item: MarketplaceItem, scope: "project" | "global") => void
 }
@@ -40,15 +46,27 @@ export const MarketplaceListView = (props: Props) => {
   const vscode = useVSCode()
   const [search, setSearch] = createSignal("")
   const [status, setStatus] = createSignal<StatusOption>({ value: "all", label: t("marketplace.filter.all") })
+  const [source, setSource] = createSignal<{ value: string; label: string }>({ value: "all", label: "All Sources" })
   const [types, setTypes] = createSignal<MarketplaceItem["type"][]>([])
   const [categories, setCategories] = createSignal<string[]>([])
   const [relevant, setRelevant] = createSignal(props.initialRelevant ?? false)
 
-  const options = (): StatusOption[] => [
+  const statusOptions = (): StatusOption[] => [
     { value: "all", label: t("marketplace.filter.all") },
     { value: "installed", label: t("marketplace.filter.installed") },
     { value: "notInstalled", label: t("marketplace.filter.notInstalled") },
   ]
+
+  const sourceOptions = createMemo(() => {
+    const list = [{ value: "all", label: "All Sources" }, { value: "official", label: "Official (Kilo)" }]
+    const configured = props.sources ?? []
+    for (const m of configured) {
+      if (m.name !== "official") {
+        list.push({ value: m.name, label: `${m.name}${m.enabled === false ? " (Disabled)" : ""}` })
+      }
+    }
+    return list
+  })
 
   const label = (category: string) =>
     category
@@ -91,8 +109,8 @@ export const MarketplaceListView = (props: Props) => {
     setCategories([...current, category])
   }
 
-  const filtered = createMemo(() =>
-    filterItems(
+  const filtered = createMemo(() => {
+    let items = filterItems(
       props.items,
       props.metadata,
       search(),
@@ -106,8 +124,13 @@ export const MarketplaceListView = (props: Props) => {
       },
       relevant(),
       props.relevance,
-    ),
-  )
+    )
+    const src = source().value
+    if (src !== "all") {
+      items = items.filter((i) => (src === "official" ? !i.marketplace : i.marketplace === src))
+    }
+    return items
+  })
 
   return (
     <div class="marketplace-list">
@@ -128,7 +151,14 @@ export const MarketplaceListView = (props: Props) => {
           <TextField placeholder={props.searchPlaceholder} value={search()} onChange={setSearch} />
         </div>
         <Select
-          options={options()}
+          options={sourceOptions()}
+          current={source()}
+          value={(o: { value: string; label: string }) => o.value}
+          label={(o: { value: string; label: string }) => o.label}
+          onSelect={(v: { value: string; label: string } | undefined) => v && setSource(v)}
+        />
+        <Select
+          options={statusOptions()}
           current={status()}
           value={(o: StatusOption) => o.value}
           label={(o: StatusOption) => o.label}
