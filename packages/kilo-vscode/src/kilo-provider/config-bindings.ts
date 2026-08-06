@@ -31,6 +31,18 @@ export class ConfigBindings {
   private readonly bindings = new Map<string, ConfigBinding>()
 
   create(input: Omit<ConfigBinding, "id">): ConfigBinding {
+    for (const [id, existing] of this.bindings) {
+      if (
+        existing.scope === input.scope &&
+        existing.directory === input.directory &&
+        existing.connection === input.connection &&
+        existing.target.path === input.target.path &&
+        existing.target.revision === input.target.revision
+      ) {
+        return existing
+      }
+    }
+
     const binding = { ...input, id: randomUUID() }
     // Only the newest binding per scope+directory can still be saved against,
     // so drop the superseded ones instead of growing forever on read-only

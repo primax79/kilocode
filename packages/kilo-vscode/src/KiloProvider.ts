@@ -425,7 +425,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   private viewStateDisposable: vscode.Disposable | null = null
   private visibilityDisposable: vscode.Disposable | null = null
   private autoApproveBridge: ReturnType<typeof createAutoApproveBridge> | null = null
-  private readonly marketplaceRemove = createMarketplaceRemover()
+  private readonly marketplaceRemove: ReturnType<typeof createMarketplaceRemover>
 
   private ignoreController: FileIgnoreController | null = null
   private ignoreControllerDir: string | null = null
@@ -466,6 +466,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
   ) {
     this.projectDirectory = opts.projectDirectory
     this.slimEditMetadata = opts.slimEditMetadata ?? true
+    this.marketplaceRemove = createMarketplaceRemover(this.connectionService)
+    this.marketplace = new MarketplaceService(this.connectionService)
     this.unsubscribeSandboxPreference = this.connectionService.sandboxPreference?.onChange(() => {
       if (this.connectionState === "connected") void this.fetchAndSendSandboxDefault()
     })
@@ -539,7 +541,7 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     this.registerPresence()
   }
 
-  private readonly marketplace = new MarketplaceService()
+  private readonly marketplace: MarketplaceService
 
   private get marketplaceCtx(): MarketplaceActionContext {
     return {
@@ -1210,7 +1212,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
           this.openMarketplacePanel(message.directory)
           break
         case "fetchMarketplaceData":
-          this.fetchAndSendMarketplaceData().catch((e) => console.error("[Kilo New] fetchAndSendMarketplaceData failed:", e))
+          this.fetchAndSendMarketplaceData().catch((e) =>
+            console.error("[Kilo New] fetchAndSendMarketplaceData failed:", e),
+          )
           break
         case "forkSession":
           handleForkSession(this.forkCtx, message.sessionId, message.messageId).catch((e) =>
@@ -2435,12 +2439,8 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
       getErrorMessage,
       this.getWorkspaceDirectory(),
       () => this.fetchAndSendProviders(),
+      () => this.fetchAndSendConfig(),
     )
-    const set = (m: unknown) => {
-      this.cachedConfigMessage = m
-      if (m && typeof m === "object" && "globalConfig" in m)
-        this.cachedGlobalConfig = (m as { globalConfig?: Config }).globalConfig ?? null
-    }
     const method = typeof msg.method === "number" ? msg.method : 0
     const key = typeof msg.apiKey === "string" ? msg.apiKey : undefined
     const keyChanged = msg.apiKeyChanged === true
@@ -2451,9 +2451,9 @@ export class KiloProvider implements vscode.WebviewViewProvider, TelemetryProper
     if (msg.type === "connectProvider" && key) return connectProviderAction(ctx, rid, pid, key, metadata)
     if (msg.type === "authorizeProviderOAuth") return authorizeOAuthAction(ctx, rid, pid, method)
     if (msg.type === "completeProviderOAuth") return completeOAuthAction(ctx, rid, pid, method, code)
-    if (msg.type === "disconnectProvider") return disconnectProviderAction(ctx, rid, pid, this.cachedConfigMessage, set)
+    if (msg.type === "disconnectProvider") return disconnectProviderAction(ctx, rid, pid)
     if (msg.type === "saveCustomProvider" && config)
-      return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged, this.cachedConfigMessage, set)
+      return saveCustomProviderAction(ctx, rid, pid, config, key, keyChanged)
   }
 
   private async handleFetchCustomProviderModels(msg: Record<string, unknown>): Promise<void> {
