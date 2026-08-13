@@ -39,7 +39,7 @@ export async function load(
       // kilocode_change end
       const message = FrontmatterError.isInstance(err)
         ? err.data.message
-        : `Failed to parse agent ${item}`
+        : `Failed to parse agent ${item}: ${err instanceof Error ? err.message : String(err)}`
       // kilocode_change start
       if (warnings) warnings.push({ path: item, message })
       try {
@@ -120,7 +120,7 @@ export async function loadMode(
       // kilocode_change end
       const message = FrontmatterError.isInstance(err)
         ? err.data.message
-        : `Failed to parse mode ${item}`
+        : `Failed to parse mode ${item}: ${err instanceof Error ? err.message : String(err)}`
       // kilocode_change start
       if (warnings) warnings.push({ path: item, message })
       try {

@@ -40,7 +40,7 @@ export async function load(
       // kilocode_change end
       const message = FrontmatterError.isInstance(err)
         ? err.data.message
-        : `Failed to parse command ${item}`
+        : `Failed to parse command ${item}: ${err instanceof Error ? err.message : String(err)}`
       // kilocode_change start
       if (warnings) warnings.push({ path: item, message })
       try {
