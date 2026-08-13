@@ -226,3 +226,15 @@ describe("ConfigMarkdown: frontmatter has weird model id", async () => {
     expect(result.content.trim()).toBe("Strictly follow da rules")
   })
 })
+
+describe("ConfigMarkdown: frontmatter parsing w/ multiline unquoted description", async () => {
+  const result = await ConfigMarkdown.parse(import.meta.dir + "/fixtures/multiline-unquoted.md", { trusted: true }) // kilocode_change
+
+  test("should parse without throwing", () => {
+    expect(result).toBeDefined()
+    expect(result.data["name"]).toEqual("multiline-test")
+    expect(result.data["description"]).toEqual("This is a multiline unquoted description: it has colons and it spans multiple lines.")
+    expect(result.data["other"]).toEqual("quoted")
+    expect(result.content.trim()).toBe("Body")
+  })
+})

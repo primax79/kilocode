@@ -24,44 +24,70 @@ export function fallbackSanitization(content: string): string {
   const lines = frontmatter.split(/\r?\n/)
   const result: string[] = []
 
+  let inMultilineValueKey: string | null = null
+  let multilineBuffer: string[] = []
+
+  const flushMultiline = () => {
+    if (inMultilineValueKey !== null) {
+      const val = multilineBuffer.join(" ")
+      // Only quote if it contains a problematic character
+      if (val.includes(":") || val.includes("#") || val.match(/^[@%`{\[*&!'"?~-]/) || val.includes('"')) {
+        result.push(`${inMultilineValueKey}: "${val.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
+      } else {
+        result.push(`${inMultilineValueKey}: ${val}`)
+      }
+      inMultilineValueKey = null
+      multilineBuffer = []
+    }
+  }
+
   for (const line of lines) {
-    // skip comments and empty lines
+    // skip comments and empty lines if not in multiline
     if (line.trim().startsWith("#") || line.trim() === "") {
+      flushMultiline()
       result.push(line)
       continue
     }
 
-    // skip lines that are continuations (indented)
-    if (line.match(/^\s+/)) {
-      result.push(line)
+    // handle continuation lines (indented or unindented continuation of plain scalar)
+    if (line.match(/^\s+/) && !line.match(/^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*:/)) {
+      if (inMultilineValueKey !== null) {
+        multilineBuffer.push(line.trim())
+      } else {
+        result.push(line)
+      }
       continue
     }
 
     // match key: value pattern
     const kvMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*:\s*(.*)$/)
     if (!kvMatch) {
-      result.push(line)
+      if (inMultilineValueKey !== null) {
+        multilineBuffer.push(line.trim())
+      } else {
+        result.push(line)
+      }
       continue
     }
+
+    // We hit a new key-value pair, flush any active multiline buffer
+    flushMultiline()
 
     const key = kvMatch[1]
     const value = kvMatch[2].trim()
 
     // skip if value is empty, already quoted, or uses block scalar
-    if (value === "" || value === ">" || value === "|" || value.startsWith('"') || value.startsWith("'")) {
+    if (value === "" || value === ">" || value === "|" || value === ">-" || value === "|-" || value.startsWith('"') || value.startsWith("'")) {
       result.push(line)
       continue
     }
 
-    if (value.includes(":")) {
-      // kilocode_change start - preserve unquoted colon values as exact strings
-      result.push(`${key}: "${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)
-      // kilocode_change end
-      continue
-    }
-
-    result.push(line)
+    // Start a multiline buffer for any plain scalar
+    inMultilineValueKey = key
+    multilineBuffer.push(value)
   }
+
+  flushMultiline()
 
   const processed = result.join("\n")
   return content.replace(frontmatter, () => processed)
